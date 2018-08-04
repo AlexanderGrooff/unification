@@ -61,7 +61,7 @@ def reify_object(o, s):
 
 
 def _reify_object_dict(o, s):
-    obj = object.__new__(type(o))
+    obj = type(o).__new__(type(o))
     d = reify(o.__dict__, s)
     if d == o.__dict__:
         return o
