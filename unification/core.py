@@ -1,3 +1,4 @@
+import ast
 from functools import partial
 from collections import Iterator
 from toolz.compatibility import iteritems, map
@@ -30,8 +31,32 @@ def _reify(d, s):
 
 @dispatch(object, dict)
 def _reify(o, s):
-    return o  # catch all, just return the object
+    if not isinstance(o, ast.AST):
+        return o  # catch all, just return the object
 
+    if hasattr(o, '__slots__'):
+        return _reify_object_slots(o, s)
+    else:
+        return _reify_object_dict(o, s)
+
+def _reify_object_dict(o, s):
+    obj = type(o).__new__(type(o))
+    d = reify(o.__dict__, s)
+    if d == o.__dict__:
+        return o
+    obj.__dict__.update(d)
+    return obj
+
+def _reify_object_slots(o, s):
+    attrs = [getattr(o, attr) for attr in o.__slots__]
+    new_attrs = reify(attrs, s)
+    if attrs == new_attrs:
+        return o
+    else:
+        newobj = object.__new__(type(o))
+        for slot, attr in zip(o.__slots__, new_attrs):
+            setattr(newobj, slot, attr)
+    return newobj
 
 def reify(e, s):
     """ Replace variables of expression with substitution
