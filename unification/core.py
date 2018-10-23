@@ -1,5 +1,7 @@
 import ast
 from functools import partial
+from types import FunctionType
+from inspect import signature
 from collections import Iterator
 from toolz.compatibility import iteritems, map
 from toolz import assoc
@@ -78,6 +80,12 @@ def reify(e, s):
 ###############
 # Unification #
 ###############
+
+@dispatch(FunctionType, FunctionType, dict)
+def _unify(u, v, s):
+    if signature(u) != signature(v):
+        return False
+    return s
 
 seq = tuple, list, Iterator
 
