@@ -21,40 +21,33 @@ def print_code_type(c):
         print("freevars", c.co_freevars)
         print("cellvars", c.co_cellvars)
 
+
+def try_find_name_in_substitute(name, s):
+    """
+    Check for the token value of logic variables and compare them to the
+    given name to see if there's a substitute
+    """
+    return [val for var_n, val in s.items() if var_n.token == name][0]
+
 @dispatch(FunctionType, dict)
 def _reify(f, s):
-    # Since we cannot modify the bytecode of a function, we'll have to create
-    # a new function based on the bytecode from the original function.
-    # The constants used in the function are located in f.__code__.co_consts
-    # See: https://stackoverflow.com/questions/33348067/modifying-python-bytecode
-    code = f.__code__
-    if code.co_freevars:
-        return f
-    reified_constants = reify(code.co_consts, s)
-    print("Reifying function {}")
-    print_code_type(code)
-    new_byte_code = CodeType(
-        code.co_argcount,
-        code.co_kwonlyargcount,
-        code.co_nlocals,
-        code.co_stacksize,
-        code.co_flags,
-        code.co_code,
-        reified_constants,
-        code.co_names,
-        code.co_varnames,
-        code.co_filename,
-        code.co_name,
-        code.co_firstlineno,
-        code.co_lnotab,   # In general, You should adjust this
-        code.co_freevars,
-        code.co_cellvars
-    )
-    print_code_type(new_byte_code)
+    shadow_dict = {}
+    for global_name in f.__code__.co_names:
+        print("Checking if {} is in substitute".format(global_name))
+        try:
+            v = try_find_name_in_substitute(global_name, s)
+            shadow_dict[global_name] = v
+            print("Adding {} -> {} to shadow dict".format(global_name, v))
+        except IndexError:
+            print("Couldn't find {} in substitute".format(global_name))
 
-    new_f = lambda: 123
-    new_f.__code__ = new_byte_code
-    return new_f
+    def g():
+        for name, v in shadow_dict.items():
+            exec("{} = {}".format(name, v))
+        return f
+    g.__name__ = f.__name__
+    return g
+
 
 @dispatch(Iterator, dict)
 def _reify(t, s):
