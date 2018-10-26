@@ -4,6 +4,7 @@ from types import FunctionType, CodeType
 from collections import Iterator
 from toolz.compatibility import iteritems, map
 from toolz import assoc
+from codetransformer import Code, CodeTransformer, instructions, pattern
 
 from .utils import transitive_get as walk
 from .variable import Var, var, isvar
@@ -11,16 +12,6 @@ from .dispatch import dispatch
 
 ################
 # Reificiation #
-################
-
-def print_code_type(c):
-        print("consts", c.co_consts)
-        print("names", c.co_names)
-        print("varnames", c.co_varnames)
-        print("name", c.co_name)
-        print("freevars", c.co_freevars)
-        print("cellvars", c.co_cellvars)
-
 
 def try_find_name_in_substitute(name, s):
     """
@@ -28,6 +19,16 @@ def try_find_name_in_substitute(name, s):
     given name to see if there's a substitute
     """
     return [val for var_n, val in s.items() if var_n.token == name][0]
+
+def replace_logicvar_with_val(f, logicvar_name, val):
+    class ReplaceLogicVar(CodeTransformer):
+        @pattern(instructions.LOAD_GLOBAL)
+        def _replace_logicvar(self, loadlogicvar):
+            if loadlogicvar.arg == logicvar_name:
+                yield instructions.LOAD_CONST(val).steal(loadlogicvar)
+
+    transformer = ReplaceLogicVar()
+    return transformer(f)
 
 @dispatch(FunctionType, dict)
 def _reify(f, s):
@@ -41,12 +42,9 @@ def _reify(f, s):
         except IndexError:
             print("Couldn't find {} in substitute".format(global_name))
 
-    def g():
-        for name, v in shadow_dict.items():
-            exec("{} = {}".format(name, v))
-        return f
-    g.__name__ = f.__name__
-    return g
+    for logicvar, val in shadow_dict.items():
+        f = replace_logicvar_with_val(f, logicvar, val)
+    return f
 
 
 @dispatch(Iterator, dict)
