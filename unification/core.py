@@ -12,6 +12,7 @@ from .dispatch import dispatch
 
 ################
 # Reificiation #
+################
 
 def try_find_name_in_substitute(name, s):
     """
@@ -21,11 +22,16 @@ def try_find_name_in_substitute(name, s):
     return [val for var_n, val in s.items() if var_n.token == name][0]
 
 def replace_logicvar_with_val(f, logicvar_name, val):
+    print("Replacing var {}".format(logicvar_name))
     class ReplaceLogicVar(CodeTransformer):
         @pattern(instructions.LOAD_GLOBAL)
         def _replace_logicvar(self, loadlogicvar):
             if loadlogicvar.arg == logicvar_name:
+                print("Replacing logic var {}".format(loadlogicvar.arg))
                 yield instructions.LOAD_CONST(val).steal(loadlogicvar)
+            else:
+                print("Couldn't replace logic var {}".format(loadlogicvar.arg))
+                yield loadlogicvar
 
     transformer = ReplaceLogicVar()
     return transformer(f)
@@ -42,8 +48,10 @@ def _reify(f, s):
         except IndexError:
             print("Couldn't find {} in substitute".format(global_name))
 
+    print("Original instructions: {}".format(Code.from_pyfunc(f).instrs))
     for logicvar, val in shadow_dict.items():
         f = replace_logicvar_with_val(f, logicvar, val)
+    print("New instructions: {}".format(Code.from_pyfunc(f).instrs))
     return f
 
 
