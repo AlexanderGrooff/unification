@@ -4,7 +4,10 @@ from types import FunctionType, CodeType
 from collections import Iterator
 from toolz.compatibility import iteritems, map
 from toolz import assoc
-from codetransformer import Code, CodeTransformer, instructions, pattern
+from codetransformer import Code, CodeTransformer, instructions, \
+    pattern
+from codetransformer.instructions import Instruction
+from inspect import signature
 
 from .utils import transitive_get as walk
 from .variable import Var, var, isvar
@@ -14,23 +17,13 @@ from .dispatch import dispatch
 # Reificiation #
 ################
 
-def try_find_name_in_substitute(name, s):
-    """
-    Check for the token value of logic variables and compare them to the
-    given name to see if there's a substitute
-    """
-    return [val for var_n, val in s.items() if var_n.token == name][0]
-
 def replace_logicvar_with_val(f, logicvar_name, val):
-    print("Replacing var {}".format(logicvar_name))
     class ReplaceLogicVar(CodeTransformer):
         @pattern(instructions.LOAD_GLOBAL)
         def _replace_logicvar(self, loadlogicvar):
             if loadlogicvar.arg == logicvar_name:
-                print("Replacing logic var {}".format(loadlogicvar.arg))
                 yield instructions.LOAD_CONST(val).steal(loadlogicvar)
             else:
-                print("Couldn't replace logic var {}".format(loadlogicvar.arg))
                 yield loadlogicvar
 
     transformer = ReplaceLogicVar()
@@ -40,18 +33,17 @@ def replace_logicvar_with_val(f, logicvar_name, val):
 def _reify(f, s):
     shadow_dict = {}
     for global_name in f.__code__.co_names:
-        print("Checking if {} is in substitute".format(global_name))
         try:
-            v = try_find_name_in_substitute(global_name, s)
-            shadow_dict[global_name] = v
-            print("Adding {} -> {} to shadow dict".format(global_name, v))
-        except IndexError:
-            print("Couldn't find {} in substitute".format(global_name))
+            logicvar = f.__globals__[global_name]
+            if not isvar(logicvar):
+                continue
+            reified_v = reify(logicvar, s)
+            shadow_dict[global_name] = reified_v
+        except (IndexError, KeyError):
+            pass
 
-    print("Original instructions: {}".format(Code.from_pyfunc(f).instrs))
     for logicvar, val in shadow_dict.items():
         f = replace_logicvar_with_val(f, logicvar, val)
-    print("New instructions: {}".format(Code.from_pyfunc(f).instrs))
     return f
 
 
@@ -122,13 +114,29 @@ def reify(e, s):
 # Unification #
 ###############
 
-@dispatch(FunctionType, FunctionType, dict)
+seq = tuple, list, Iterator
+
+@dispatch(Instruction, Instruction, dict)
 def _unify(u, v, s):
-    if u.__code__ != v.__code__:
-        return False
+    if u.uses_name:
+        return assoc(s, var(u.arg), v.arg)
+    if v.uses_name:
+        return assoc(s, var(v.arg), u.arg)
     return s
 
-seq = tuple, list, Iterator
+@dispatch(FunctionType, FunctionType, dict)
+def _unify(u, v, s):
+    print("Unifying {} to {}".format(u, v))
+    if signature(u) != signature(v):
+        return False
+    c_v = Code.from_pyfunc(u)
+    c_u = Code.from_pyfunc(v)
+
+    if len(c_v.instrs) == len(c_u.instrs):
+        print("Same amount of instructions, directly correlating instructions")
+        return _unify(c_v.instrs, c_u.instrs, s)
+    print("Instructions dont match, returning s")
+    return s
 
 @dispatch(seq, seq, dict)
 def _unify(u, v, s):
@@ -188,3 +196,4 @@ def unify(u, v, s):  # no check at the moment
 @dispatch(object, object)
 def unify(u, v):
     return unify(u, v, {})
+
