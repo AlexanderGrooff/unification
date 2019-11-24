@@ -62,3 +62,20 @@ def test_unify_complex():
 
     assert unify({1: (2, 3)}, {1: (2, var(5))}, {}) == {var(5): 3}
     assert unify({1: [2, 3]}, {1: [2, var(5)]}, {}) == {var(5): 3}
+
+def test_unify_lambda():
+    assert unify(lambda: 1, lambda: 1, {}) == {}
+    assert unify(lambda: 2, lambda: 1, {}) == False
+    assert unify(lambda: 2, lambda: 1 + 1, {}) == {}
+
+def test_unify_function_body():
+    x = var('x')
+    assert unify(lambda: x, lambda: 1, {}) == {x: 1}
+
+def test_unify_function_binary_op():
+    x = var('x')
+    assert unify(lambda: x + 1, lambda: 2 + 1, {}) == {x: 2}
+
+def test_unify_function_binary_op():
+    x = var('x')
+    assert unify(lambda: x + 1, lambda: 2 + 1, {}) == {x: 2}
