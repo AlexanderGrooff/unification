@@ -118,25 +118,59 @@ seq = tuple, list, Iterator
 
 @dispatch(Instruction, Instruction, dict)
 def _unify(u, v, s):
-    if u.uses_name:
+    print("Unifying instruction {} to {}".format(u, v))
+    if u.equiv(v):
+        print("Instructions {} and {} are equivalent".format(u, v))
+        return s
+    if u.uses_name or u.uses_free or u.uses_varname:
+        print("Associating {} with {}".format(var(u.arg), v.arg))
         return assoc(s, var(u.arg), v.arg)
-    if v.uses_name:
+    if v.uses_name or v.uses_free or v.uses_varname:
+        print("Associating {} with {}".format(var(v.arg), u.arg))
         return assoc(s, var(v.arg), u.arg)
-    return s
+    return False
+
+def first_diff_index(l1, l2):
+    min_len = min(len(l1), len(l2))
+    for i in range(min_len):
+        x1 = l1[i]; x2 = l2[i]
+        if x1 != x2:
+            return i
+
+def last_diff_index(l1, l2):
+    rl1 = list(reversed(l1)); rl2 = list(reversed(l2))
+    return first_diff_index(rl1, rl2)
+
+def function_diff(l1, l2):
+    """
+    Given two functions that have the same signature, find the part where
+    the functions are different from each other.
+    :param [Instruction, ...] u: List of instructions from first function
+    :param [Instruction, ...] v: List of instructions from second function
+    """
+    min_len = min(len(l1), len(l2))
+    start_diff = first_diff_index(l1, l2) or min_len
+    end_diff = last_diff_index(l1, l2)
+    if end_diff:
+        end_diff += 1  # List until after last diff
+    elif end_diff == 0:
+        end_diff = None
+    if len(l1) > len(l2):
+        return l1[start_diff:end_diff]
+    return l2[start_diff:end_diff]
 
 @dispatch(FunctionType, FunctionType, dict)
 def _unify(u, v, s):
     print("Unifying {} to {}".format(u, v))
     if signature(u) != signature(v):
+        print("Signature doesn't match for function {} and {}".format(u, v))
         return False
-    c_v = Code.from_pyfunc(u)
-    c_u = Code.from_pyfunc(v)
+    c_u = Code.from_pyfunc(u)
+    c_v = Code.from_pyfunc(v)
 
-    if len(c_v.instrs) == len(c_u.instrs):
-        print("Same amount of instructions, directly correlating instructions")
-        return _unify(c_v.instrs, c_u.instrs, s)
-    print("Instructions dont match, returning s")
-    return s
+    print("Found instrs for u: {}".format(c_u.instrs))
+    print("Found instrs for v: {}".format(c_v.instrs))
+    return _unify(c_v.instrs, c_u.instrs, s)
 
 @dispatch(seq, seq, dict)
 def _unify(u, v, s):
