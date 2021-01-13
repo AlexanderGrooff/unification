@@ -1,16 +1,13 @@
-from functools import partial
-from .core import unify, reify
-from .variable import var
-from .dispatch import dispatch
+from collections.abc import Mapping
+
+from .core import _reify, _unify, construction_sentinel
 
 
 def unifiable(cls):
-    """ Register standard unify and reify operations on class
+    """Register standard unify and reify operations on a class.
 
     This uses the type and __dict__ or __slots__ attributes to define the
-    nature of the term
-
-    See Also:
+    nature of the term.
 
     >>> class A(object):
     ...     def __init__(self, a, b):
@@ -26,19 +23,14 @@ def unifiable(cls):
     >>> unify(a, b, {})
     {~x: 2}
     """
-    _unify.add((cls, cls, dict), unify_object)
-    _reify.add((cls, dict), reify_object)
+    _unify.add((cls, cls, Mapping), _unify_object)
+    _reify.add((cls, Mapping), _reify_object)
 
     return cls
 
 
-#########
-# Reify #
-#########
-
-
-def reify_object(o, s):
-    """ Reify a Python object with a substitution
+def _reify_object(o, s):
+    """Reify a Python object with a substitution.
 
     >>> class Foo(object):
     ...     def __init__(self, a, b):
@@ -54,7 +46,7 @@ def reify_object(o, s):
     >>> print(reify_object(f, {x: 2}))
     Foo(1, 2)
     """
-    if hasattr(o, '__slots__'):
+    if hasattr(o, "__slots__"):
         return _reify_object_slots(o, s)
     else:
         return _reify_object_dict(o, s)
@@ -62,38 +54,36 @@ def reify_object(o, s):
 
 def _reify_object_dict(o, s):
     obj = type(o).__new__(type(o))
-    d = reify(o.__dict__, s)
+
+    d = yield _reify(o.__dict__, s)
+
+    yield construction_sentinel
+
     if d == o.__dict__:
-        return o
-    obj.__dict__.update(d)
-    return obj
+        yield o
+    else:
+        obj.__dict__.update(d)
+        yield obj
 
 
 def _reify_object_slots(o, s):
     attrs = [getattr(o, attr) for attr in o.__slots__]
-    new_attrs = reify(attrs, s)
+    new_attrs = yield _reify(attrs, s)
+
+    yield construction_sentinel
+
     if attrs == new_attrs:
-        return o
+        yield o
     else:
         newobj = object.__new__(type(o))
         for slot, attr in zip(o.__slots__, new_attrs):
             setattr(newobj, slot, attr)
-        return newobj
+
+        yield newobj
 
 
-@dispatch(slice, dict)
-def _reify(o, s):
-    """ Reify a Python ``slice`` object """
-    return slice(*reify((o.start, o.stop, o.step), s))
-
-
-#########
-# Unify #
-#########
-
-
-def unify_object(u, v, s):
-    """ Unify two Python objects
+def _unify_object(u, v, s):
+    """Unify two Python objects.
 
     Unifies their type and ``__dict__`` attributes
 
@@ -111,15 +101,14 @@ def unify_object(u, v, s):
     {~x: 2}
     """
     if type(u) != type(v):
-        return False
-    if hasattr(u, '__slots__'):
-        return unify([getattr(u, slot) for slot in u.__slots__],
-                     [getattr(v, slot) for slot in v.__slots__],
-                     s)
-    else:
-        return unify(u.__dict__, v.__dict__, s)
+        yield False
+        return
 
-@dispatch(slice, slice, dict)
-def _unify(u, v, s):
-    """ Unify a Python ``slice`` object """
-    return unify((u.start, u.stop, u.step), (v.start, v.stop, v.step), s)
+    if hasattr(u, "__slots__"):
+        yield _unify(
+            tuple(getattr(u, slot) for slot in u.__slots__),
+            tuple(getattr(v, slot) for slot in v.__slots__),
+            s,
+        )
+    else:
+        yield _unify(u.__dict__, v.__dict__, s)
